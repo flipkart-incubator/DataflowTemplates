@@ -33,7 +33,6 @@ public interface KafkaToPubsubOptions extends PipelineOptions {
 
   @Description(
       "Comma Separated list of Kafka topic(s) to read the input from (e.g: topic1,topic2).")
-  @Validation.Required
   String getInputTopics();
 
   void setInputTopics(String inputTopics);
@@ -73,4 +72,15 @@ public interface KafkaToPubsubOptions extends PipelineOptions {
   String getVaultToken();
 
   void setVaultToken(String vaultToken);
+
+  @Description("Topic Regex to filter out source topic to read from")
+  String getTopicRegex();
+
+  void setTopicRegex(String topicRegex);
+
+  @Description("Duration in minutes to attempt check for change in list of source kafka topics. " +
+          "(This will not take into effect if topic list is provided")
+  String getTopicRefreshDuration();
+
+  void setTopicRefreshDuration(String topicRefreshDuration);
 }

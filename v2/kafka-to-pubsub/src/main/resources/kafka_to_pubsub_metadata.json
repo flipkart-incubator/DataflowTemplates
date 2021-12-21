@@ -12,9 +12,26 @@
     {
       "name": "inputTopics",
       "label": "Kafka input topics",
-      "helpText": "Comma separated Kafka topics to read data",
+      "helpText": "Comma separated Kafka topics to read data. Optional only if topic refresh duration is specified",
       "regexes": [],
-      "paramType": "TEXT"
+      "paramType": "TEXT",
+      "isOptional": true
+    },
+    {
+      "name": "topicRegex",
+      "label": "Regex to filter Kafka input topics",
+      "helpText": "Regex to filer topics",
+      "regexes": [],
+      "paramType": "TEXT",
+      "isOptional": true
+    },
+    {
+      "name": "topicRefreshDuration",
+      "label": "Duration in minutes to refresh list of input topics from kafka cluster. Optional only if input topics are specified",
+      "helpText": "Duration in minutes",
+      "regexes": [],
+      "paramType": "TEXT",
+      "isOptional": true
     },
     {
       "name": "outputTopic",

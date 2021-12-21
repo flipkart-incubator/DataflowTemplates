@@ -29,6 +29,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.coders.CoderRegistry;
@@ -42,6 +43,8 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollectionTuple;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.TypeDescriptors;
+import org.apache.commons.lang3.StringUtils;
+import org.joda.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -152,11 +155,38 @@ public class KafkaToPubsub {
    * @param options arguments to the pipeline
    */
   public static PipelineResult run(KafkaToPubsubOptions options) {
-    List<String> topicsList = new ArrayList<>(Arrays.asList(options.getInputTopics().split(",")));
+    checkArgument(StringUtils.isNotEmpty(options.getInputTopics())
+                    || StringUtils.isNotEmpty(options.getTopicRefreshDuration()),
+            "Either list of topics or topicRefreshDuration is required");
 
-    checkArgument(
-        topicsList.size() > 0 && topicsList.stream().allMatch((s) -> s.trim().length() > 0),
-        "inputTopics cannot be an empty string.");
+    List<String> topicsList = null;
+    Pattern topicRegex = null;
+    Duration topicRefreshDuration = null;
+    if(StringUtils.isNotEmpty(options.getInputTopics())) {
+      topicsList = new ArrayList<>(Arrays.asList(options.getInputTopics().split(",")));
+
+      checkArgument(
+              topicsList.size() > 0 && topicsList.stream().allMatch((s) -> s.trim().length() > 0),
+              "inputTopics cannot be an empty string.");
+    } else {
+      int parsedTopicRefreshDuration;
+      try {
+        parsedTopicRefreshDuration = Integer.parseInt(options.getTopicRefreshDuration());
+      } catch (NumberFormatException ex){
+        throw new IllegalArgumentException("topicRefreshDuration should be a valid number");
+      }
+
+      checkArgument(parsedTopicRefreshDuration > 0,
+              "topicRefreshDuration must be greater than 0");
+
+      LOG.warn("topicRefreshDuration {} is provided", parsedTopicRefreshDuration);
+      topicRefreshDuration = Duration.standardMinutes(parsedTopicRefreshDuration);
+
+      if(StringUtils.isNotEmpty(options.getTopicRegex())){
+        LOG.warn("Topic regex '{}' is provided", options.getTopicRegex());
+        topicRegex = Pattern.compile(options.getTopicRegex());
+      }
+    }
 
     List<String> bootstrapServersList =
         new ArrayList<>(Arrays.asList(options.getBootstrapServers().split(",")));
@@ -195,10 +225,10 @@ public class KafkaToPubsub {
     TypeDescriptor<String> stringTypeDescriptor = TypeDescriptors.strings();
 
     LOG.info(
-        "Starting Kafka-To-PubSub Pipeline with parameters bootstrap servers:{} input topics:{}"
+        "Starting Kafka-To-PubSub Pipeline with parameters bootstrap servers:{} input topics/topic refresh duration:{}"
             + " output pubsub topic:{} ",
         options.getBootstrapServers(),
-        options.getInputTopics(),
+        StringUtils.isNotEmpty(options.getInputTopics()) ? options.getInputTopics() : options.getTopicRefreshDuration(),
         options.getOutputTopic());
 
     /*
@@ -213,7 +243,7 @@ public class KafkaToPubsub {
             /* Step #1: Read messages in from Kafka */
             .apply(
                 "readFromKafka",
-                readFromKafka(options.getBootstrapServers(), topicsList, kafkaConfig, sslConfig))
+                readFromKafka(options.getBootstrapServers(), topicsList, kafkaConfig, sslConfig, topicRegex, topicRefreshDuration))
             /* Step #2: Transform the Kafka Messages via UDF */
             .apply("applyUDF", new FormatTransform.UdfProcess(options));
     /* Step #3: Write the successful records out to Pub/Sub */

@@ -15,12 +15,15 @@
  */
 package com.google.cloud.teleport.v2.transforms;
 
+import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkArgument;
+
 import com.google.cloud.teleport.v2.kafka.consumer.SslConsumerFactoryFn;
 import com.google.cloud.teleport.v2.options.KafkaToPubsubOptions;
 import com.google.cloud.teleport.v2.templates.KafkaPubsubConstants;
 import com.google.cloud.teleport.v2.values.FailsafeElement;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.NullableCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
@@ -32,7 +35,9 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionTuple;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.joda.time.Duration;
 
 /** Different transformations over the processed data in the pipeline. */
 public class FormatTransform {
@@ -46,14 +51,19 @@ public class FormatTransform {
    * @return PCollection of Kafka Key & Value Pair deserialized in string format
    */
   public static PTransform<PBegin, PCollection<KV<String, String>>> readFromKafka(
-      String bootstrapServers,
-      List<String> topicsList,
-      Map<String, Object> config,
-      @Nullable Map<String, String> sslConfig) {
+          String bootstrapServers,
+          List<String> topicsList,
+          Map<String, Object> config,
+          @Nullable Map<String, String> sslConfig,
+          @Nullable Pattern topicRegex,
+          @Nullable Duration dynamicReadDuration) {
+
+    checkArgument(topicRegex == null || dynamicReadDuration != null,
+            "dynamicReadDuration is needed for topicRegex to work");
+
     KafkaIO.Read<String, String> kafkaRecords =
         KafkaIO.<String, String>read()
             .withBootstrapServers(bootstrapServers)
-            .withTopics(topicsList)
             .withKeyDeserializerAndCoder(
                 StringDeserializer.class, NullableCoder.of(StringUtf8Coder.of()))
             .withValueDeserializerAndCoder(
@@ -61,6 +71,21 @@ public class FormatTransform {
             .withConsumerConfigUpdates(config);
     if (sslConfig != null) {
       kafkaRecords = kafkaRecords.withConsumerFactoryFn(new SslConsumerFactoryFn(sslConfig));
+    }
+
+    if (CollectionUtils.isNotEmpty(topicsList)){
+      kafkaRecords = kafkaRecords.withTopics(topicsList);
+    }
+
+    if(dynamicReadDuration != null){
+      kafkaRecords = kafkaRecords.withDynamicRead(dynamicReadDuration).withMaxNumRecords(Long.MAX_VALUE);
+
+      // It needs dependency built using https://github.com/flipkart-incubator/beam [branch: kafka-read-topic-regex]
+      // Kafka-common/pom.xml artifact <beam-sdks-java-io-kafka> should have version with which above branch built and
+      // added to local maven repo
+      /*if(topicRegex != null){
+        kafkaRecords= kafkaRecords.withTopicRegex(topicRegex);
+      }*/
     }
     return kafkaRecords.withoutMetadata();
   }
